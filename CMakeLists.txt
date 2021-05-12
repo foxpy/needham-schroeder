@@ -3,4 +3,6 @@ project(NeedhamSchroeder)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
 
+add_subdirectory(qc)
 add_executable(main main.c)
+target_link_libraries(main PUBLIC qc)
