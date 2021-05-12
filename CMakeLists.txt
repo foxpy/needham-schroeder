@@ -4,6 +4,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED True)
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+find_package(SQLite3 REQUIRED)
 add_subdirectory(qc)
+
 add_executable(main main.c)
-target_link_libraries(main PUBLIC qc)
+target_link_libraries(main PUBLIC qc SQLite::SQLite3)
