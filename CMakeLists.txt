@@ -7,5 +7,4 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 find_package(SQLite3 REQUIRED)
 add_subdirectory(qc)
 
-add_executable(main main.c)
-target_link_libraries(main PUBLIC qc SQLite::SQLite3)
+add_subdirectory(server)
