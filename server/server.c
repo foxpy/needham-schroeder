@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <qc.h>
 #include "server.h"
 #include "schema.h"
@@ -26,7 +27,48 @@ fail:
     return NULL;
 }
 
-void server_close(server_ctx* server) {
-    sqlite3_close_v2(server->conn);
-    free(server);
+void server_close(server_ctx* ctx) {
+    sqlite3_close_v2(ctx->conn);
+    free(ctx);
+}
+
+qc_result write_user(sqlite3* conn, char const* username, uint8_t const id[static 16], uint8_t const key[static 32],
+                     qc_err* err) {
+    char const* query = "insert into users(name, id, key) values(?1, ?2, ?3);";
+    sqlite3_stmt* stmt;
+    int rc;
+    if ((rc = sqlite3_prepare_v2(conn, query, SQLITE3_STMT_NULL_TERMINATED, &stmt, NULL)) != SQLITE_OK
+        || (rc = sqlite3_bind_text(stmt, 1, username, SQLITE3_STMT_NULL_TERMINATED, SQLITE_STATIC)) != SQLITE_OK
+        || (rc = sqlite3_bind_blob(stmt, 2, id, 16, SQLITE_STATIC)) != SQLITE_OK
+        || (rc = sqlite3_bind_blob(stmt, 3, key, 32, SQLITE_STATIC)) != SQLITE_OK
+        || (rc = sqlite3_step(stmt)) != SQLITE_DONE) {
+        goto fail;
+    }
+    sqlite3_finalize(stmt);
+    return QC_SUCCESS;
+fail:
+    qc_err_set(err, "Failed to insert user into database: %s (%s)", sqlite3_errstr(rc), sqlite3_errmsg(conn));
+    sqlite3_finalize(stmt);
+    return QC_FAILURE;
+}
+
+qc_result server_register(server_ctx* ctx, char const* username, qc_err* err) {
+    uint8_t id[16];
+    uint8_t key[32];
+    qc_result result;
+    if (qc_rnd_os_buf(16, id, err) == QC_FAILURE) {
+        qc_err_set(err, "Failed to generate ID");
+        result = QC_FAILURE;
+    } else if (qc_rnd_os_buf(32, key, err) == QC_FAILURE) {
+        qc_err_set(err, "Failed to generate cryptographic key");
+        result = QC_FAILURE;
+    } else {
+        result = write_user(ctx->conn, username, id, key, err);
+    }
+    if (result == QC_FAILURE) {
+        qc_err_append_front(err, "Failed to register user \"%s\"", username);
+        return QC_FAILURE;
+    } else {
+        return QC_SUCCESS;
+    }
 }
