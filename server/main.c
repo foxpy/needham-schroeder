@@ -9,6 +9,7 @@ static void help(void* help_data) {
     fprintf(stderr, "Where MODE is one of:\n");
     fprintf(stderr, "\tget-credentials -- USERNAME: print credentials for specified user\n");
     fprintf(stderr, "\tadd-user -- USERNAME: adds user USERNAME to database and outputs his data\n");
+    fprintf(stderr, "\tremove-user -- USERNAME: removes user USERNAME from database\n");
     fprintf(stderr, "\tlisten -- IP PORT: starts listen server on IP:PORT and serves requests\n");
 }
 
@@ -58,6 +59,32 @@ static qc_result get_credentials_cmd(server_ctx* ctx, int extra_args_idx, int ex
     }
 }
 
+static qc_result remove_user_cmd(server_ctx* ctx, int extra_args_idx, int extra_args_cnt, char* argv[], qc_err* err) {
+    if (extra_args_cnt != 1) {
+        qc_err_set(err, "Remove user command: expected exactly one argument, got %s", extra_args_cnt);
+        return QC_FAILURE;
+    } else {
+        char const* name = argv[extra_args_idx+0];
+        user* user;
+        if (server_query(ctx, name, &user, err) != QC_SUCCESS) {
+            qc_err_append_front(err, "Failed to obtain user data for deletion");
+            return QC_FAILURE;
+        } else if (user == NULL) {
+            printf("Warning: user \"%s\" does not exist\n", name);
+            return QC_SUCCESS;
+        } else {
+            user_free(user);
+        }
+        if (server_unregister(ctx, name, err) != QC_SUCCESS) {
+            qc_err_append_front(err, "Failed to delete user from database");
+            return QC_FAILURE;
+        } else {
+            printf("Successfully deleted user \"%s\"\n", name);
+            return QC_SUCCESS;
+        }
+    }
+}
+
 static qc_result listen_cmd(server_ctx* ctx, int extra_args_idx, int extra_args_cnt, char* argv[], qc_err* err) {
     QC_UNUSED(ctx);
     QC_UNUSED(extra_args_idx);
@@ -86,6 +113,8 @@ int main(int argc, char* argv[]) {
             qc_err_fatal(err, "Failed to initialize server");
         } else if (strcmp(mode, "add-user") == 0) {
             result = add_user_cmd(ctx, extra_idx, extra_cnt, argv, err);
+        } else if (strcmp(mode, "remove-user") == 0) {
+            result = remove_user_cmd(ctx, extra_idx, extra_cnt, argv, err);
         } else if (strcmp(mode, "listen") == 0) {
             result = listen_cmd(ctx, extra_idx, extra_cnt, argv, err);
         } else if (strcmp(mode, "get-credentials") == 0) {

@@ -107,3 +107,20 @@ fail:
     sqlite3_finalize(stmt);
     return QC_FAILURE;
 }
+
+qc_result server_unregister(server_ctx* ctx, char const* username, qc_err* err) {
+    char const* query = "delete from users where name = ?;";
+    sqlite3_stmt* stmt;
+    int rc;
+    if ((rc = sqlite3_prepare_v2(ctx->conn, query, SQLITE3_STMT_NULL_TERMINATED, &stmt, NULL)) != SQLITE_OK
+        || (rc = sqlite3_bind_text(stmt, 1, username, SQLITE3_STMT_NULL_TERMINATED, SQLITE_STATIC)) != SQLITE_OK
+        || (rc = sqlite3_step(stmt)) != SQLITE_DONE) {
+        goto fail;
+    }
+    sqlite3_finalize(stmt);
+    return QC_SUCCESS;
+fail:
+    qc_err_set(err, "Failed to remove user data from database: %s (%s)", sqlite3_errstr(rc), sqlite3_errmsg(ctx->conn));
+    sqlite3_finalize(stmt);
+    return QC_FAILURE;
+}
