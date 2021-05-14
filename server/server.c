@@ -32,7 +32,14 @@ void server_close(server_ctx* ctx) {
     free(ctx);
 }
 
-qc_result write_user(sqlite3* conn, char const* username, uint8_t const id[static 16], uint8_t const key[static 32],
+void user_free(user* user) {
+    free(user->name);
+    free(user->id);
+    free(user->key);
+    free(user);
+}
+
+qc_result user_write(sqlite3* conn, char const* username, const uint8_t* id, const uint8_t* key,
                      qc_err* err) {
     char const* query = "insert into users(name, id, key) values(?1, ?2, ?3);";
     sqlite3_stmt* stmt;
@@ -63,7 +70,7 @@ qc_result server_register(server_ctx* ctx, char const* username, qc_err* err) {
         qc_err_set(err, "Failed to generate cryptographic key");
         result = QC_FAILURE;
     } else {
-        result = write_user(ctx->conn, username, id, key, err);
+        result = user_write(ctx->conn, username, id, key, err);
     }
     if (result == QC_FAILURE) {
         qc_err_append_front(err, "Failed to register user \"%s\"", username);
@@ -71,4 +78,32 @@ qc_result server_register(server_ctx* ctx, char const* username, qc_err* err) {
     } else {
         return QC_SUCCESS;
     }
+}
+
+qc_result server_query(server_ctx* ctx, char const* username, user** dst, qc_err* err) {
+    char const* query = "select name, lower(hex(id)), lower(hex(key)) from users where name = ?";
+    sqlite3_stmt* stmt;
+    int rc;
+    if ((rc = sqlite3_prepare_v2(ctx->conn, query, SQLITE3_STMT_NULL_TERMINATED, &stmt, NULL)) != SQLITE_OK
+        || (rc = sqlite3_bind_text(stmt, 1, username, SQLITE3_STMT_NULL_TERMINATED, SQLITE_STATIC)) != SQLITE_OK) {
+        goto fail;
+    }
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        *dst = qc_malloc(sizeof(user));
+        user* u = *dst;
+        u->name = strdup((char const*) sqlite3_column_text(stmt, 0));
+        u->id = strdup((char const*) sqlite3_column_text(stmt, 1));
+        u->key = strdup((char const*) sqlite3_column_text(stmt, 2));
+    } else {
+        *dst = NULL;
+        return QC_SUCCESS;
+    }
+    sqlite3_finalize(stmt);
+    return QC_SUCCESS;
+fail:
+    *dst = NULL;
+    qc_err_set(err, "Failed to get user data from database: %s (%s)", sqlite3_errstr(rc), sqlite3_errmsg(ctx->conn));
+    sqlite3_finalize(stmt);
+    return QC_FAILURE;
 }
