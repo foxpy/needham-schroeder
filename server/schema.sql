@@ -1,5 +1,5 @@
 create table if not exists users(
-    name text unique,
-    id blob unique,
-    key blob unique
+    name text unique not null,
+    id blob unique not null,
+    key blob unique not null
 );
