@@ -1,4 +1,5 @@
 #pragma once
+#include <stdio.h>
 #include <qc.h>
 #include <sqlite3.h>
 
@@ -22,4 +23,4 @@ void server_close(server_ctx* ctx);
 qc_result server_register(server_ctx* ctx, char const* username, qc_err* err);
 qc_result server_query(server_ctx* ctx, char const* username, user** dst, qc_err* err);
 qc_result server_unregister(server_ctx* ctx, char const* username, qc_err* err);
-// TODO: list users command
+qc_result server_dump_users(server_ctx* ctx, FILE* dst, qc_err* err);

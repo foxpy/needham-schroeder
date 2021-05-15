@@ -124,3 +124,24 @@ fail:
     sqlite3_finalize(stmt);
     return QC_FAILURE;
 }
+
+qc_result server_dump_users(server_ctx* ctx, FILE* dst, qc_err* err) {
+    char const* query = "select name from users;";
+    sqlite3_stmt* stmt;
+    int rc;
+    if ((rc = sqlite3_prepare_v2(ctx->conn, query, SQLITE3_STMT_NULL_TERMINATED, &stmt, NULL)) != SQLITE_OK) {
+        goto fail;
+    }
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        fprintf(dst, "%s\n", (char const*) sqlite3_column_text(stmt, 0));
+    }
+    if (rc != SQLITE_DONE) {
+        goto fail;
+    }
+    sqlite3_finalize(stmt);
+    return QC_SUCCESS;
+fail:
+    qc_err_set(err, "Failed to obtain user list from database: %s (%s)", sqlite3_errstr(rc), sqlite3_errmsg(ctx->conn));
+    sqlite3_finalize(stmt);
+    return QC_FAILURE;
+}

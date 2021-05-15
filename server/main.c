@@ -10,6 +10,7 @@ static void help(void* help_data) {
     fprintf(stderr, "\tget-credentials -- USERNAME: print credentials for specified user\n");
     fprintf(stderr, "\tadd-user -- USERNAME: adds user USERNAME to database and outputs his data\n");
     fprintf(stderr, "\tremove-user -- USERNAME: removes user USERNAME from database\n");
+    fprintf(stderr, "\tlist-users: list all users registered in database\n");
     fprintf(stderr, "\tlisten -- IP PORT: starts listen server on IP:PORT and serves requests\n");
 }
 
@@ -85,6 +86,22 @@ static qc_result remove_user_cmd(server_ctx* ctx, int extra_args_idx, int extra_
     }
 }
 
+static qc_result list_users_cmd(server_ctx* ctx, int extra_args_idx, int extra_args_cnt, char* argv[], qc_err* err) {
+    QC_UNUSED(extra_args_idx);
+    QC_UNUSED(argv);
+    if (extra_args_cnt > 0) {
+        qc_err_set(err, "List users command does not accept any arguments");
+        return QC_FAILURE;
+    } else {
+        if (server_dump_users(ctx, stdout, err) == QC_FAILURE) {
+            qc_err_append_front(err, "Failed to obtain list of users");
+            return QC_FAILURE;
+        } else {
+            return QC_SUCCESS;
+        }
+    }
+}
+
 static qc_result listen_cmd(server_ctx* ctx, int extra_args_idx, int extra_args_cnt, char* argv[], qc_err* err) {
     QC_UNUSED(ctx);
     QC_UNUSED(extra_args_idx);
@@ -117,6 +134,8 @@ int main(int argc, char* argv[]) {
             result = remove_user_cmd(ctx, extra_idx, extra_cnt, argv, err);
         } else if (strcmp(mode, "listen") == 0) {
             result = listen_cmd(ctx, extra_idx, extra_cnt, argv, err);
+        } else if (strcmp(mode, "list-users") == 0) {
+            result = list_users_cmd(ctx, extra_idx, extra_cnt, argv, err);
         } else if (strcmp(mode, "get-credentials") == 0) {
             result = get_credentials_cmd(ctx, extra_idx, extra_cnt, argv, err);
         } else {
