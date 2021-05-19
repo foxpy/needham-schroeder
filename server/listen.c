@@ -3,12 +3,22 @@
 #include <stddef.h>
 #include <string.h>
 #include <assert.h>
-#include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <qc.h>
 #include <mq_setup.h>
 #include "server.h"
+
+void parse_message(const uint8_t msg[static BUFSIZ]) {
+    char* a_id;
+    char* b_id;
+    qc_bytes_to_hexstr(false, 16, &msg[0], &a_id);
+    qc_bytes_to_hexstr(false, 16, &msg[16], &b_id);
+    printf("User %s is willing to talk to user %s\n", &a_id[2], &b_id[2]);
+    free(a_id);
+    free(b_id);
+}
 
 static void listen_loop(mqd_t in, mqd_t out, qc_err* err) {
     ssize_t rc;
@@ -20,8 +30,8 @@ static void listen_loop(mqd_t in, mqd_t out, qc_err* err) {
             qc_err_set(err, "Failed to obtain message from queue: %s", strerror(errno));
             return;
         } else {
-            assert(rc <= INT_MAX);
-            printf("Got message: %.*s\n", (int) rc, msg);
+            assert(rc == BUFSIZ);
+            parse_message((uint8_t*) msg);
             mq_send(out, msg, rc, 0);
         }
     }
