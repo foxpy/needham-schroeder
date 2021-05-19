@@ -10,7 +10,8 @@ add_custom_command(
 add_executable(ns-server
     main.c
     server.c
+    listen.c
     ${CMAKE_CURRENT_BINARY_DIR}/schema.h
 )
 target_include_directories(ns-server PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(ns-server PUBLIC qc SQLite::SQLite3)
+target_link_libraries(ns-server PUBLIC qc SQLite::SQLite3 MqSetup)

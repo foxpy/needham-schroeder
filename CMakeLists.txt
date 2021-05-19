@@ -7,4 +7,6 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 find_package(SQLite3 REQUIRED)
 add_subdirectory(qc)
 
+add_subdirectory(mq_setup)
 add_subdirectory(server)
+add_subdirectory(client)

@@ -11,7 +11,7 @@ static void help(void* help_data) {
     fprintf(stderr, "\tadd-user -- USERNAME: adds user USERNAME to database and outputs his data\n");
     fprintf(stderr, "\tremove-user -- USERNAME: removes user USERNAME from database\n");
     fprintf(stderr, "\tlist-users: list all users registered in database\n");
-    fprintf(stderr, "\tlisten -- IP PORT: starts listen server on IP:PORT and serves requests\n");
+    fprintf(stderr, "\tlisten -- QNAMEIN QNAMEOUT: starts listen server and serves user requests\n");
 }
 
 static qc_result add_user_cmd(server_ctx* ctx, int extra_args_idx, int extra_args_cnt, char* argv[], qc_err* err) {
@@ -102,13 +102,17 @@ static qc_result list_users_cmd(server_ctx* ctx, int extra_args_idx, int extra_a
     }
 }
 
-static qc_result listen_cmd(server_ctx* ctx, int extra_args_idx, int extra_args_cnt, char* argv[], qc_err* err) {
-    QC_UNUSED(ctx);
-    QC_UNUSED(extra_args_idx);
-    QC_UNUSED(extra_args_cnt);
-    QC_UNUSED(argv);
-    QC_UNUSED(err);
-    QC_UNIMPLEMENTED();
+static void listen_cmd(server_ctx* ctx, int extra_args_idx, int extra_args_cnt, char* argv[], qc_err* err) {
+    if (extra_args_cnt != 2) {
+        qc_err_set(err, "Server listen command: expected exactly two arguments, got %d", extra_args_cnt);
+        return;
+    } else {
+        char const* mqueue_in_name = argv[extra_args_idx+0];
+        char const* mqueue_out_name = argv[extra_args_idx+1];
+        server_listen(ctx, mqueue_in_name, mqueue_out_name, err);
+        qc_err_append_front(err, "Server encountered error during request serving");
+        return;
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -133,7 +137,9 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(mode, "remove-user") == 0) {
             result = remove_user_cmd(ctx, extra_idx, extra_cnt, argv, err);
         } else if (strcmp(mode, "listen") == 0) {
-            result = listen_cmd(ctx, extra_idx, extra_cnt, argv, err);
+            listen_cmd(ctx, extra_idx, extra_cnt, argv, err);
+            // Listen command is expected to run forever, if it returns — there is an error
+            result = QC_FAILURE;
         } else if (strcmp(mode, "list-users") == 0) {
             result = list_users_cmd(ctx, extra_idx, extra_cnt, argv, err);
         } else if (strcmp(mode, "get-credentials") == 0) {

@@ -24,3 +24,4 @@ qc_result server_register(server_ctx* ctx, char const* username, qc_err* err);
 qc_result server_query(server_ctx* ctx, char const* username, user** dst, qc_err* err);
 qc_result server_unregister(server_ctx* ctx, char const* username, qc_err* err);
 qc_result server_dump_users(server_ctx* ctx, FILE* dst, qc_err* err);
+void server_listen(server_ctx* ctx, char const* mqueue_in_name, char const* mqueue_out_name, qc_err* err);
