@@ -14,4 +14,4 @@ add_executable(ns-server
     ${CMAKE_CURRENT_BINARY_DIR}/schema.h
 )
 target_include_directories(ns-server PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(ns-server PUBLIC qc SQLite::SQLite3 MqSetup)
+target_link_libraries(ns-server PUBLIC qc SQLite::SQLite3 MqSetup CipherSuites)

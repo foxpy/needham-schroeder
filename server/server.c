@@ -39,16 +39,15 @@ void user_free(user* user) {
     free(user);
 }
 
-qc_result user_write(sqlite3* conn, char const* username, const uint8_t* id, const uint8_t* key,
-                     qc_err* err) {
+qc_result user_write(sqlite3* conn, char const* username, const uint8_t* id, const uint8_t* key, qc_err* err) {
     char const* query = "insert into users(name, id, key) values(?1, ?2, ?3);";
     sqlite3_stmt* stmt;
     int rc;
-    if ((rc = sqlite3_prepare_v2(conn, query, SQLITE3_STMT_NULL_TERMINATED, &stmt, NULL)) != SQLITE_OK
-        || (rc = sqlite3_bind_text(stmt, 1, username, SQLITE3_STMT_NULL_TERMINATED, SQLITE_STATIC)) != SQLITE_OK
-        || (rc = sqlite3_bind_blob(stmt, 2, id, 16, SQLITE_STATIC)) != SQLITE_OK
-        || (rc = sqlite3_bind_blob(stmt, 3, key, 32, SQLITE_STATIC)) != SQLITE_OK
-        || (rc = sqlite3_step(stmt)) != SQLITE_DONE) {
+    if ((rc = sqlite3_prepare_v2(conn, query, SQLITE3_STMT_NULL_TERMINATED, &stmt, NULL)) != SQLITE_OK ||
+        (rc = sqlite3_bind_text(stmt, 1, username, SQLITE3_STMT_NULL_TERMINATED, SQLITE_STATIC)) != SQLITE_OK ||
+        (rc = sqlite3_bind_blob(stmt, 2, id, 16, SQLITE_STATIC)) != SQLITE_OK ||
+        (rc = sqlite3_bind_blob(stmt, 3, key, 32, SQLITE_STATIC)) != SQLITE_OK ||
+        (rc = sqlite3_step(stmt)) != SQLITE_DONE) {
         goto fail;
     }
     sqlite3_finalize(stmt);
@@ -84,12 +83,11 @@ qc_result server_query(server_ctx* ctx, char const* username, user** dst, qc_err
     char const* query = "select name, lower(hex(id)), lower(hex(key)) from users where name = ?";
     sqlite3_stmt* stmt;
     int rc;
-    if ((rc = sqlite3_prepare_v2(ctx->conn, query, SQLITE3_STMT_NULL_TERMINATED, &stmt, NULL)) != SQLITE_OK
-        || (rc = sqlite3_bind_text(stmt, 1, username, SQLITE3_STMT_NULL_TERMINATED, SQLITE_STATIC)) != SQLITE_OK) {
+    if ((rc = sqlite3_prepare_v2(ctx->conn, query, SQLITE3_STMT_NULL_TERMINATED, &stmt, NULL)) != SQLITE_OK ||
+        (rc = sqlite3_bind_text(stmt, 1, username, SQLITE3_STMT_NULL_TERMINATED, SQLITE_STATIC)) != SQLITE_OK) {
         goto fail;
     }
-    rc = sqlite3_step(stmt);
-    if (rc == SQLITE_ROW) {
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
         *dst = qc_malloc(sizeof(user));
         user* u = *dst;
         u->name = strdup((char const*) sqlite3_column_text(stmt, 0));
@@ -112,9 +110,9 @@ qc_result server_unregister(server_ctx* ctx, char const* username, qc_err* err) 
     char const* query = "delete from users where name = ?;";
     sqlite3_stmt* stmt;
     int rc;
-    if ((rc = sqlite3_prepare_v2(ctx->conn, query, SQLITE3_STMT_NULL_TERMINATED, &stmt, NULL)) != SQLITE_OK
-        || (rc = sqlite3_bind_text(stmt, 1, username, SQLITE3_STMT_NULL_TERMINATED, SQLITE_STATIC)) != SQLITE_OK
-        || (rc = sqlite3_step(stmt)) != SQLITE_DONE) {
+    if ((rc = sqlite3_prepare_v2(ctx->conn, query, SQLITE3_STMT_NULL_TERMINATED, &stmt, NULL)) != SQLITE_OK ||
+        (rc = sqlite3_bind_text(stmt, 1, username, SQLITE3_STMT_NULL_TERMINATED, SQLITE_STATIC)) != SQLITE_OK ||
+        (rc = sqlite3_step(stmt)) != SQLITE_DONE) {
         goto fail;
     }
     sqlite3_finalize(stmt);
@@ -142,6 +140,30 @@ qc_result server_dump_users(server_ctx* ctx, FILE* dst, qc_err* err) {
     return QC_SUCCESS;
 fail:
     qc_err_set(err, "Failed to obtain user list from database: %s (%s)", sqlite3_errstr(rc), sqlite3_errmsg(ctx->conn));
+    sqlite3_finalize(stmt);
+    return QC_FAILURE;
+}
+
+qc_result server_get_key_by_id(server_ctx* ctx, uint8_t const id[static 16], uint8_t key[static 32], qc_err* err) {
+    char const* query = "select key from users where id = ?1;";
+    sqlite3_stmt* stmt;
+    int rc;
+    qc_result result;
+    if ((rc = sqlite3_prepare_v2(ctx->conn, query, SQLITE3_STMT_NULL_TERMINATED, &stmt, NULL)) != SQLITE_OK ||
+        (rc = sqlite3_bind_blob(stmt, 1, id, 16, SQLITE_STATIC)) != SQLITE_OK) {
+        goto fail;
+    }
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        memmove(key, sqlite3_column_blob(stmt, 0), 32);
+        result = QC_SUCCESS;
+    } else {
+        qc_err_set(err, "No user exists with such ID");
+        result = QC_FAILURE;
+    }
+    sqlite3_finalize(stmt);
+    return result;
+fail:
+    qc_err_set(err, "Failed to obtain user data from database: %s (%s)", sqlite3_errstr(rc), sqlite3_errmsg(ctx->conn));
     sqlite3_finalize(stmt);
     return QC_FAILURE;
 }
