@@ -47,7 +47,7 @@ to talk to them.
 ## client-client protocol
 
 Now as client A has obtained data from server, he can connect to client B.
-1. Client A sends an encrypted container K2 obtained from server to client B as well as `CIPHER`.
+1. Client A sends `CIPHER` and encrypted container K2 obtainer from server to client B.
 2. Client B is able to decrypt this container and see who is connecting to him. He also gets
    a one-time session key. Now client B generates random `NONCE`, encrypts it with session
    `KEY` and sends to client A.
