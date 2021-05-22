@@ -149,7 +149,7 @@ qc_result handle_reply_from_b(qc_err* err) {
         } else {
             char* session_key;
             qc_bytes_to_hexstr(false, 32, param.session_key, &session_key);
-            printf("Successfully exchanged session key with client B: %s\n", session_key);
+            printf("A: Successfully exchanged session key with client B: %s\n", session_key);
             free(session_key);
             return QC_SUCCESS;
         }

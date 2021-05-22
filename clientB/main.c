@@ -109,7 +109,7 @@ static qc_result handle_reply(qc_err* err) {
         if (memcmp(param.nonce, received_nonce, 32) == 0) {
             char* key;
             qc_bytes_to_hexstr(false, 32, param.session_key, &key);
-            printf("Successfully exchanged session key with client A: %s\n", key);
+            printf("B: Successfully exchanged session key with client A: %s\n", key);
             free(key);
             return QC_SUCCESS;
         } else {
@@ -138,7 +138,7 @@ static qc_result handle_request(qc_err* err) {
         }
         char* id_str;
         qc_bytes_to_hexstr(false, 16, param.id_b, &id_str);
-        printf("Received session key from suspicious user %s\n", id_str);
+        printf("B: Received session key from suspicious user %s\n", id_str);
         free(id_str);
         return send_reply(err);
     }
