@@ -14,6 +14,7 @@ struct {
     uint8_t session_key[32];
     uint8_t id_b[16];
     uint8_t nonce[32];
+    uint8_t cipher[1];
 } param;
 
 static void increment_nonce(uint8_t nonce[static 32]) {
@@ -66,8 +67,19 @@ static qc_result send_reply(qc_err* err) {
         return QC_FAILURE;
     } else {
         char msg[BUFSIZ];
-        memmove(&msg[0], param.nonce, 32);
-        xorshift_encrypt_in_place(param.session_key, 32, (uint8_t*) msg);
+        if (param.cipher[0] == XORSHIFT_CIPHER) {
+            memmove(&msg[0], param.nonce, 32);
+            xorshift_encrypt_in_place(param.session_key, 32, (uint8_t*) msg);
+        } else {
+            uint8_t chacha_nonce[12];
+            if (qc_rnd_os_buf(12, chacha_nonce, err) == QC_FAILURE) {
+                qc_err_append_front(err, "Failed to generate ChaCha nonce for reply to A");
+                return QC_FAILURE;
+            }
+            memmove(&msg[0], chacha_nonce, 12);
+            memmove(&msg[12], param.nonce, 32);
+            chacha20_encrypt_in_place(param.session_key, 32, (uint8_t*) &msg[0], (uint8_t*) &msg[12]);
+        }
         errno = 0;
         if (mq_send(param.out, msg, BUFSIZ, 0) == -1) {
             qc_err_set(err, "Failed to send reply to client A: %s", strerror(errno));
@@ -85,9 +97,14 @@ static qc_result handle_reply(qc_err* err) {
         qc_err_set(err, "Failed to accept client A reply: %s", strerror(errno));
         return QC_FAILURE;
     } else {
-        xorshift_decrypt_in_place(param.session_key, 32, (uint8_t*) msg);
         uint8_t received_nonce[32];
-        memmove(received_nonce, &msg[0], 32);
+        if (param.cipher[0] == XORSHIFT_CIPHER) {
+            xorshift_decrypt_in_place(param.session_key, 32, (uint8_t*) msg);
+            memmove(received_nonce, &msg[0], 32);
+        } else {
+            chacha20_decrypt_in_place(param.session_key, 32, (uint8_t*) &msg[0], (uint8_t*) &msg[12]);
+            memmove(received_nonce, &msg[12], 32);
+        }
         increment_nonce(param.nonce);
         if (memcmp(param.nonce, received_nonce, 32) == 0) {
             char* key;
@@ -109,9 +126,16 @@ static qc_result handle_request(qc_err* err) {
         qc_err_set(err, "Failed to accept client A request: %s", strerror(errno));
         return QC_FAILURE;
     } else {
-        xorshift_decrypt_in_place(param.my_key, 48, (uint8_t*) msg);
-        memmove(param.session_key, &msg[0], 32);
-        memmove(param.id_b, &msg[32], 16);
+        memmove(param.cipher, &msg[0], 1);
+        if (param.cipher[0] == XORSHIFT_CIPHER) {
+            xorshift_decrypt_in_place(param.my_key, 48, (uint8_t*) &msg[1]);
+            memmove(param.session_key, &msg[1], 32);
+            memmove(param.id_b, &msg[33], 16);
+        } else {
+            chacha20_decrypt_in_place(param.my_key, 48, (uint8_t*) &msg[1], (uint8_t*) &msg[1+12]);
+            memmove(param.session_key, &msg[1+12], 32);
+            memmove(param.id_b, &msg[33+12], 16);
+        }
         char* id_str;
         qc_bytes_to_hexstr(false, 16, param.id_b, &id_str);
         printf("Received session key from suspicious user %s\n", id_str);
@@ -142,4 +166,5 @@ int main(int argc, char* argv[]) {
     }
     qc_args_free(args);
     qc_err_free(err);
+    abort();
 }

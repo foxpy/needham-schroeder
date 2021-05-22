@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
@@ -19,6 +20,7 @@ static struct parameters {
     uint8_t my_key[32];
     uint8_t session_key[32];
     uint8_t payload_for_target[48];
+    uint8_t payload_for_target_chacha[60];
 } param;
 
 static qc_result parse_hex(char const* str, size_t len, uint8_t dst[static len], qc_err* err) {
@@ -64,12 +66,31 @@ static void parse_server_reply(uint8_t msg[static 128]) {
     if (memcmp(&msg[0], param.nonce, 32) == 0 && memcmp(&msg[64], param.target_id, 16) == 0) {
         memmove(param.session_key, &msg[32], 32);
         memmove(param.payload_for_target, &msg[80], 48);
+    } else {
+        fprintf(stderr, "Server is imposter");
+        abort();
+    }
+}
+
+static void parse_server_reply_chacha(uint8_t msg[static 152]) {
+    chacha20_decrypt_in_place(param.my_key, 140, &msg[0], &msg[12]);
+    if (memcmp(&msg[12], param.nonce, 32) == 0 && memcmp(&msg[64+12], param.target_id, 16) == 0) {
+        memmove(param.session_key, &msg[32+12], 32);
+        memmove(param.payload_for_target_chacha, &msg[80+12], 60);
+    } else {
+        fprintf(stderr, "Server is imposter");
+        abort();
     }
 }
 
 static qc_result send_request_to_b(qc_err* err) {
     char msg[BUFSIZ] = {0};
-    memmove(msg, param.payload_for_target, 48);
+    memmove(&msg[0], param.cipher, 1);
+    if (param.cipher[0] == XORSHIFT_CIPHER) {
+        memmove(&msg[1], param.payload_for_target, 48);
+    } else {
+        memmove(&msg[1], param.payload_for_target_chacha, 60);
+    }
     errno = 0;
     if (mq_send(param.out, msg, BUFSIZ, 0) == -1) {
         qc_err_set(err, "Failed to send message to client B: %s", strerror(errno));
@@ -99,12 +120,28 @@ qc_result handle_reply_from_b(qc_err* err) {
         qc_err_set(err, "Failed to acquire reply from client B: %s", strerror(errno));
         return QC_FAILURE;
     } else {
-        xorshift_decrypt_msg_in_place(param.session_key, 48, (uint8_t*) msg);
         uint8_t nonce_b[32];
-        memmove(nonce_b, &msg[0], 32);
+        if (param.cipher[0] == XORSHIFT_CIPHER) {
+            xorshift_decrypt_msg_in_place(param.session_key, 32, (uint8_t*) msg);
+            memmove(nonce_b, &msg[0], 32);
+        } else {
+            chacha20_decrypt_in_place(param.session_key, 32, (uint8_t*) &msg[0], (uint8_t*) &msg[12]);
+            memmove(nonce_b, &msg[12], 32);
+        }
         increment_nonce(nonce_b);
-        memmove(msg, nonce_b, 32);
-        xorshift_encrypt_msg_in_place(param.session_key, 32, (uint8_t*) msg);
+        if (param.cipher[0] == XORSHIFT_CIPHER) {
+            memmove(msg, nonce_b, 32);
+            xorshift_encrypt_msg_in_place(param.session_key, 32, (uint8_t*) msg);
+        } else {
+            uint8_t chacha_nonce[12];
+            if (qc_rnd_os_buf(12, chacha_nonce, err) == QC_FAILURE) {
+                qc_err_append_front(err, "Failed to generate ChaCha nonce for reply to client B");
+                return QC_FAILURE;
+            }
+            memmove(&msg[0], chacha_nonce, 12);
+            memmove(&msg[12], nonce_b, 32);
+            chacha20_encrypt_in_place(param.session_key, 32, (uint8_t*) &msg[0], (uint8_t*) &msg[12]);
+        }
         errno = 0;
         if (mq_send(param.out, msg, BUFSIZ, 0) == -1) {
             qc_err_set(err, "Failed to send reply to client B: %s", strerror(errno));
@@ -129,6 +166,7 @@ int main(int argc, char* argv[]) {
     char const* my_id;
     char const* target_id;
     char const* my_key;
+    bool use_chacha;
     qc_args_string(args, "mqueue-server-in", &mqueue_server_in_path,
                    "Name of input message queue for communication with server");
     qc_args_string(args, "mqueue-server-out", &mqueue_server_out_path,
@@ -140,10 +178,12 @@ int main(int argc, char* argv[]) {
     qc_args_string(args, "id", &my_id, "My user ID");
     qc_args_string(args, "target-id", &target_id, "Target user ID");
     qc_args_string(args, "my-key", &my_key, "My secret key");
-    *(param.cipher) = XORSHIFT_CIPHER;
+    qc_args_flag(args, 'c', "use-chacha", &use_chacha, "Use ChaCha20 cipher instead of inferior xorshift");
     if (qc_args_parse(args, argc, argv, err) == QC_FAILURE) {
         qc_err_fatal(err, "Failed to parse CLI arguments");
-    } else if (connect_mq(mqueue_server_in_path, mqueue_server_out_path, &param.in, &param.out, err) == QC_FAILURE) {
+    }
+    param.cipher[0] = use_chacha ? CHACHA20_CIPHER : XORSHIFT_CIPHER;
+    if (connect_mq(mqueue_server_in_path, mqueue_server_out_path, &param.in, &param.out, err) == QC_FAILURE) {
         qc_err_fatal(err, "Failed to open message queue");
     } else if (parse_hex(my_id, 16, param.my_id, err) == QC_FAILURE) {
         qc_err_fatal(err, "Failed to parse My ID");
@@ -164,7 +204,11 @@ int main(int argc, char* argv[]) {
             qc_err_fatal(err, "Failed to receive answer: %s", strerror(errno));
         } else {
             assert(rc == BUFSIZ);
-            parse_server_reply((uint8_t*) msg);
+            if (!use_chacha) {
+                parse_server_reply((uint8_t*) msg);
+            } else {
+                parse_server_reply_chacha((uint8_t*) msg);
+            }
             mq_close(param.in);
             mq_close(param.out);
         }

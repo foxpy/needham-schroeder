@@ -19,6 +19,8 @@ typedef struct user_request {
     uint8_t key_b[32];
     uint8_t cipher[1];
     uint8_t session_key[32];
+    uint8_t chacha_nonce_a[12];
+    uint8_t chacha_nonce_b[12];
 } user_request;
 
 static qc_result parse_message(server_ctx* ctx, const uint8_t msg[static BUFSIZ], user_request* dst, qc_err* err) {
@@ -32,12 +34,14 @@ static qc_result parse_message(server_ctx* ctx, const uint8_t msg[static BUFSIZ]
     } else if (server_get_key_by_id(ctx, dst->id_b, dst->key_b, err) == QC_FAILURE) {
         qc_err_append_front(err, "Failed to obtain key for user B");
         return QC_FAILURE;
-    } else if (*dst->cipher != XORSHIFT_CIPHER) {
-        // TODO: ChaCha20 support
-        qc_err_set(err, "Unsupported cipher");
-        return QC_FAILURE;
     } else if (qc_rnd_os_buf(32, dst->session_key, err) == QC_FAILURE) {
         qc_err_append_front(err, "Failed to generate session key");
+        return QC_FAILURE;
+    } else if (qc_rnd_os_buf(12, dst->chacha_nonce_a, err) == QC_FAILURE) {
+        qc_err_append_front(err, "Failed to generate nonce for ChaCha key A");
+        return QC_FAILURE;
+    } else if (qc_rnd_os_buf(12, dst->chacha_nonce_b, err) == QC_FAILURE) {
+        qc_err_append_front(err, "Failed to generate nonce for ChaCha key B");
         return QC_FAILURE;
     } else {
         return QC_SUCCESS;
@@ -49,6 +53,18 @@ static void xorshift_encrypt_in_place(uint8_t const key[static 32], size_t len, 
     xorshift_encrypt(key, len, buf, tmp);
     memmove(buf, tmp, len);
     free(tmp);
+}
+
+static void prepare_reply_chacha(user_request const* request, uint8_t reply[static 152]) {
+    memmove(&reply[0], request->chacha_nonce_a, 12);
+    memmove(&reply[0+12], request->nonce, 32);
+    memmove(&reply[32+12], request->session_key, 32);
+    memmove(&reply[64+12], request->id_b, 16);
+    memmove(&reply[80+12], request->chacha_nonce_b, 12);
+    memmove(&reply[80+12+12], request->session_key, 32);
+    memmove(&reply[112+12+12], request->id_a, 16);
+    chacha20_encrypt_in_place(request->key_b, 32+16, &reply[80+12], &reply[80+12+12]);
+    chacha20_encrypt_in_place(request->key_a, 32+32+16+32+16+12, &reply[0], &reply[12]);
 }
 
 static void prepare_reply(user_request const* request, uint8_t reply[static 128]) {
@@ -78,7 +94,11 @@ static void listen_loop(server_ctx* ctx, mqd_t in, mqd_t out, qc_err* err) {
                 qc_err_set(err, "");
             } else {
                 memset(msg, 0, BUFSIZ);
-                prepare_reply(&p, (uint8_t*) msg);
+                if (p.cipher[0] == XORSHIFT_CIPHER) {
+                    prepare_reply(&p, (uint8_t*) msg);
+                } else {
+                    prepare_reply_chacha(&p, (uint8_t*) msg);
+                }
                 errno = 0;
                 if (mq_send(out, msg, BUFSIZ, 0)) {
                     fprintf(stderr, "Failed to send reply: %s", strerror(errno));
