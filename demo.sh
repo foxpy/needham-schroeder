@@ -38,6 +38,8 @@ main() {
   server/ns-server --database="$database" --mode=add-user -- "$bob"
   server/ns-server --database="$database" --mode=listen -- "$queue_server_in" "$queue_server_out" &
   server_pid=$!
+  while [[ ! -f "/dev/mqueue/$queue_server_in" ]]; do ls / &>/dev/null; done
+  while [[ ! -f "/dev/mqueue/$queue_server_out" ]]; do ls / &>/dev/null; done
   alice_id="$(printf "select lower(hex(id)) from users where name = '%s';" "$alice" | sqlite3 "$database")"
   alice_key="$(printf "select lower(hex(key)) from users where name = '%s';" "$alice" | sqlite3 "$database")"
   bob_id="$(printf "select lower(hex(id)) from users where name = '%s';" "$bob" | sqlite3 "$database")"
@@ -45,6 +47,8 @@ main() {
   echo -e "\nxorshift mode"
   clientB/ns-client-b --my-key="$bob_key" --mqueue-in="$bob_queue_in" --mqueue-out="$bob_queue_out" &
   bob_pid=$!
+  while [[ ! -f "/dev/mqueue/$bob_queue_in" ]]; do ls / &>/dev/null; done
+  while [[ ! -f "/dev/mqueue/$bob_queue_out" ]]; do ls / &>/dev/null; done
   clientA/ns-client-a --mqueue-server-in="$queue_server_out" --mqueue-server-out="$queue_server_in" \
                       --mqueue-client-in="$bob_queue_out" --mqueue-client-out="$bob_queue_in" \
                       --id="$alice_id" --target-id="$bob_id" --my-key="$alice_key"
@@ -52,6 +56,8 @@ main() {
   echo -e "\nchacha20 mode"
   clientB/ns-client-b --my-key="$bob_key" --mqueue-in="$bob_queue_in" --mqueue-out="$bob_queue_out" &
   bob_pid=$!
+  while [[ ! -f "/dev/mqueue/$bob_queue_in" ]]; do ls / &>/dev/null; done
+  while [[ ! -f "/dev/mqueue/$bob_queue_out" ]]; do ls / &>/dev/null; done
   clientA/ns-client-a --mqueue-server-in="$queue_server_out" --mqueue-server-out="$queue_server_in" \
                       --mqueue-client-in="$bob_queue_out" --mqueue-client-out="$bob_queue_in" \
                       --id="$alice_id" --target-id="$bob_id" --my-key="$alice_key" --use-chacha
